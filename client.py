@@ -43,6 +43,7 @@ class FileTransferApp:
             return True
         except ConnectionRefusedError:
             return False
+
     def get_connection_code(self):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -105,7 +106,6 @@ class FileTransferApp:
         finally:
             sock.close()
 
-
     def copy_code(self, window, code):
         window.clipboard_clear()
         window.clipboard_append(code)
@@ -127,6 +127,10 @@ class FileTransferApp:
         entry.insert(0, file_path)
 
     def open_receive_window(self):
+        if not self.check_server_status():
+            tk.messagebox.showerror("Error", "Server is not running")
+            return
+
         receive_window = tk.Toplevel(self.root)
         receive_window.title("Receive Image")
         receive_window.geometry("400x300+500+200")
