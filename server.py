@@ -1,19 +1,24 @@
 import socket
 import uuid
+import threading
 
 connection_codes = {}
+condition = threading.Condition()
 
 def handle_sender(sender_conn):
     connection_code = str(uuid.uuid4())
     print(f"Connection code: {connection_code}")
     sender_conn.sendall(connection_code.encode())
-    connection_codes[connection_code] = connection_code
 
+    with condition:
+        connection_codes[connection_code] = None
 
-    # while connection_code not in connection_codes:
-    #     pass  # Busy-wait until a receiver connects
+        # Wait until a receiver connects
+        while connection_codes[connection_code] is None:
+            condition.wait()
 
-    receiver_conn = connection_codes[connection_code]
+        receiver_conn = connection_codes[connection_code]
+
     sender_conn.sendall(b"READY")
 
     while True:
@@ -25,19 +30,24 @@ def handle_sender(sender_conn):
 
     sender_conn.close()
     receiver_conn.close()
-    del connection_codes[connection_code]
+
+    with condition:
+        del connection_codes[connection_code]
 
 def handle_receiver(receiver_conn):
+    receiver_conn.sendall(b"READY")
     connection_code = receiver_conn.recv(1024).decode()
     print(f"Connection code: {connection_code}")
+    print(connection_codes.keys())
 
-    if connection_code in connection_codes:
-        receiver_conn.sendall(b"READY")
-        connection_codes[connection_code] = receiver_conn
-    else:
-        receiver_conn.sendall(b"INVALID_CODE")
-        receiver_conn.close()
-        return
+    with condition:
+        if connection_code in connection_codes:
+            connection_codes[connection_code] = receiver_conn
+            condition.notify_all()  # Notify waiting sender
+            receiver_conn.sendall(b"READY")
+        else:
+            receiver_conn.sendall(b"INVALID_CODE")
+            receiver_conn.close()
 
 def start_server():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -52,10 +62,10 @@ def start_server():
 
         if client_type == "SENDER":
             print('Sender connected from', addr)
-            handle_sender(conn)
+            threading.Thread(target=handle_sender, args=(conn,)).start()
         elif client_type == "RECEIVER":
             print('Receiver connected from', addr)
-            handle_receiver(conn)
+            threading.Thread(target=handle_receiver, args=(conn,)).start()
         else:
             conn.close()
 
