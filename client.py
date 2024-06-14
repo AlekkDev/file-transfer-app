@@ -1,13 +1,15 @@
 import socket
 import os
 import tkinter as tk
-from tkinter import filedialog
-import uuid
+from tkinter import filedialog, messagebox
+import threading
 
 class FileTransferApp:
     def __init__(self, root):
         self.root = root
         self.setup_main_window()
+        self.server_socket = None
+        self.file_to_send = None
 
     def setup_main_window(self):
         self.root.title("File Transfer App")
@@ -19,14 +21,13 @@ class FileTransferApp:
         tk.Frame(self.root, width=400, height=2, bg="black").place(x=25, y=80)
 
         send_image = tk.PhotoImage(file="Images/send.png")
-        send_button = tk.Button(self.root, image=send_image, text="Send Image", font=("Arial", 15), bg="#f4fdfe",
-                                command=self.open_send_window)
+        self.send_image = send_image
+        send_button = tk.Button(self.root, image=send_image, text="Send Image", font=("Arial", 15), bg="#f4fdfe", command=self.open_send_window)
         send_button.place(x=50, y=100)
 
         receive_image = tk.PhotoImage(file="Images/receive.png")
-        receive_button = tk.Button(self.root, image=receive_image, text="Receive Image", font=("Arial", 15),
-                                   bg="#f4fdfe",
-                                   command=self.open_receive_window)
+        self.receive_image = receive_image
+        receive_button = tk.Button(self.root, image=receive_image, text="Receive Image", font=("Arial", 15), bg="#f4fdfe", command=self.open_receive_window)
         receive_button.place(x=250, y=100)
 
         tk.Label(self.root, text="Send", font=("Arial", 15), bg="#f4fdfe").place(x=90, y=240)
@@ -48,8 +49,6 @@ class FileTransferApp:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect((socket.gethostname(), 8000))
             sock.sendall(b"SENDER")
-
-            # Receive the connection code from the server
             connection_code = sock.recv(1024).decode()
             print(f"Connection code: {connection_code}")
             return connection_code
@@ -58,66 +57,26 @@ class FileTransferApp:
 
     def open_send_window(self):
         if not self.check_server_status():
-            tk.messagebox.showerror("Error", "Server is not running")
+            messagebox.showerror("Error", "Server is not running")
             return
-        else:
-            send_window = tk.Toplevel(self.root)
-            send_window.title("Send Image")
-            send_window.geometry("400x300+500+200")
-            send_window.configure(bg="#f4fdfe")
-            send_window.resizable(False, False)
-            send_window.wm_attributes("-topmost", 1)
-            code = self.get_connection_code()
-            self.enable_file_send(send_window)
-            code_entry = tk.Entry(send_window, font=("Arial", 12), bg="#f4fdfe", justify='center')
-            code_entry.place(x=20, y=150, width=200)
-            code_entry.insert(0, code)
-            code_entry.config(state='readonly')
 
-            copy_button = tk.Button(send_window, text="Copy",
-                                    command=lambda: self.copy_code(send_window, code_entry.get()))
-            copy_button.place(x=230, y=150)
-            tk.Label(send_window, text="Select the file to send:", font=("Arial", 12), bg="#f4fdfe").place(x=20, y=30)
-            file_path_entry = tk.Entry(send_window, width=30)
-            file_path_entry.place(x=20, y=60)
+        send_window = tk.Toplevel(self.root)
+        send_window.title("Send Image")
+        send_window.geometry("400x300+500+200")
+        send_window.configure(bg="#f4fdfe")
+        send_window.resizable(False, False)
+        send_window.wm_attributes("-topmost", 1)
 
-            browse_button = tk.Button(send_window, text="Browse", command=lambda: self.browse_file(file_path_entry))
-            browse_button.place(x=260, y=55)
+        code = self.get_connection_code()
 
-            send_button = tk.Button(send_window, text="Send", command=lambda: self.send(file_path_entry.get()))
-            send_button.place(x=320, y=55)
+        code_entry = tk.Entry(send_window, font=("Arial", 12), bg="#f4fdfe", justify='center')
+        code_entry.place(x=20, y=150, width=200)
+        code_entry.insert(0, code)
+        code_entry.config(state='readonly')
 
-            self.enable_file_send(send_window)
+        copy_button = tk.Button(send_window, text="Copy", command=lambda: self.copy_code(send_window, code_entry.get()))
+        copy_button.place(x=230, y=150)
 
-    def send(self, file_name: str):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((socket.gethostname(), 8000))
-            sock.sendall(b"SENDER")
-
-            # Receive the connection code from the server
-            connection_code = sock.recv(1024).decode()
-            print(f"Connection code: {connection_code}")
-
-
-
-            with open(file_name, 'rb') as file:
-                while data := file.read(1024):
-                    sock.sendall(data)
-
-            sock.send(b"END_OF_FILE")
-            print(f"File sent: {os.path.getsize(file_name)} bytes")
-        finally:
-            sock.sendall(b"CANCEL")
-            sock.close()
-
-    def copy_code(self, window, code):
-        window.clipboard_clear()
-        window.clipboard_append(code)
-
-    # SHOWS THE BROWSE MENU TO CHOOSE THE FILE IF THE USER WANTS TO SEND A FILE
-    def enable_file_send(self, send_window):
-        return
         tk.Label(send_window, text="Select the file to send:", font=("Arial", 12), bg="#f4fdfe").place(x=20, y=30)
         file_path_entry = tk.Entry(send_window, width=30)
         file_path_entry.place(x=20, y=60)
@@ -125,8 +84,40 @@ class FileTransferApp:
         browse_button = tk.Button(send_window, text="Browse", command=lambda: self.browse_file(file_path_entry))
         browse_button.place(x=260, y=55)
 
-        send_button = tk.Button(send_window, text="Send", command=lambda: self.send(file_path_entry.get()))
+        send_button = tk.Button(send_window, text="Send", command=lambda: self.send_file(file_path_entry.get()))
         send_button.place(x=320, y=55)
+
+    def send_file(self, file_path):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((socket.gethostname(), 8000))
+            print("Waiting for receiver to be ready...")
+            sock.sendall(b"SENDER")
+
+            await_ready = sock.recv(1024).decode()
+            if await_ready == "READY":
+                print("Receiver is ready to receive the file")
+                await_start = sock.recv(1024).decode()
+                if await_start == "START_TRANSFER":
+                    self.send_file_data(sock, file_path)
+        except Exception as e:
+            print(f"Error: {e}")
+        finally:
+            sock.close()
+
+    def send_file_data(self, sock, file_path):
+        try:
+            with open(file_path, 'rb') as file:
+                while data := file.read(1024):
+                    sock.sendall(data)
+            sock.sendall(b"END_OF_FILE")
+            print(f"File sent: {os.path.getsize(file_path)} bytes")
+        except Exception as e:
+            print(f"Error: {e}")
+
+    def copy_code(self, window, code):
+        window.clipboard_clear()
+        window.clipboard_append(code)
 
     def browse_file(self, entry):
         file_path = filedialog.askopenfilename()
@@ -135,49 +126,55 @@ class FileTransferApp:
 
     def open_receive_window(self):
         if not self.check_server_status():
-            tk.messagebox.showerror("Error", "Server is not running")
+            messagebox.showerror("Error", "Server is not running")
             return
-        else:
-            receive_window = tk.Toplevel(self.root)
-            receive_window.title("Receive Image")
-            receive_window.geometry("400x300+500+200")
-            receive_window.configure(bg="#f4fdfe")
-            receive_window.resizable(False, False)
 
-            tk.Label(receive_window, text="Enter Connection Code:", font=("Arial", 12), bg="#f4fdfe").place(x=20, y=30)
-            code_entry = tk.Entry(receive_window, width=30)
-            code_entry.place(x=20, y=60)
+        receive_window = tk.Toplevel(self.root)
+        receive_window.title("Receive Image")
+        receive_window.geometry("400x300+500+200")
+        receive_window.configure(bg="#f4fdfe")
+        receive_window.resizable(False, False)
 
-            receive_button = tk.Button(receive_window, text="Receive", command=lambda: self.receive(code_entry.get()))
-            receive_button.place(x=320, y=55)
+        tk.Label(receive_window, text="Enter Connection Code:", font=("Arial", 12), bg="#f4fdfe").place(x=20, y=30)
+        code_entry = tk.Entry(receive_window, width=30)
+        code_entry.place(x=20, y=60)
 
-    def receive(self, connection_code:str):
+        receive_button = tk.Button(receive_window, text="Connect", command=lambda: self.receiver_connect(code_entry.get()))
+        receive_button.place(x=320, y=55)
+
+    def receiver_connect(self, code):
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((socket.gethostname(), 8000))
-            sock.sendall(b"RECEIVER")
-
-            ready_signal = sock.recv(1024).decode()
-            print(f"Ready signal: {ready_signal}")
-            if ready_signal != "READY":
-                print("Invalid connection code")
-                sock.close()
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.connect((socket.gethostname(), 8000))
+            self.server_socket.sendall(b"RECEIVER")
+            self.server_socket.sendall(code.encode())
+            await_ready = self.server_socket.recv(1024).decode()
+            if await_ready != "CONNECTION_ESTABLISHED":
+                print(await_ready)
                 return
-            # Send the connection code to the server
-            sock.sendall(connection_code.encode())
+            print("Connection established")
 
+            receiver_thread = threading.Thread(target=self.receiver_thread)
+            receiver_thread.start()
+
+        except Exception as e:
+            print(f"Error: {e}")
+
+    def receiver_thread(self):
+        try:
             with open('image_received.jpg', 'wb') as file:
                 while True:
-                    file_data = sock.recv(1024)
+                    file_data = self.server_socket.recv(1024)
                     if file_data.endswith(b'END_OF_FILE'):
                         file.write(file_data[:-len(b'END_OF_FILE')])
                         break
                     file.write(file_data)
 
             print(f"File 'image_received.jpg' received")
+        except Exception as e:
+            print(f"Error: {e}")
         finally:
-            sock.close()
-
+            self.server_socket.close()
 
 if __name__ == "__main__":
     root = tk.Tk()

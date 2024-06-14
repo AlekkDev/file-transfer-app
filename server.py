@@ -6,48 +6,64 @@ connection_codes = {}
 condition = threading.Condition()
 
 def handle_sender(sender_conn):
-    connection_code = str(uuid.uuid4())
-    print(f"Connection code: {connection_code}")
-    sender_conn.sendall(connection_code.encode())
+    try:
+        connection_code = str(uuid.uuid4())
+        print(f"Connection code: {connection_code}")
+        sender_conn.sendall(connection_code.encode())
 
-    with condition:
-        connection_codes[connection_code] = None
+        with condition:
+            connection_codes[connection_code] = None
+            sender_conn.sendall(b"READY")
 
-        # Wait until a receiver connects
-        while connection_codes[connection_code] is None:
-            condition.wait()
+            while connection_codes[connection_code] is None:
+                condition.wait()
 
-        receiver_conn = connection_codes[connection_code]
+            receiver_conn = connection_codes[connection_code]
 
-    sender_conn.sendall(b"READY")
+        sender_conn.sendall(b"START_TRANSFER")
 
-    while True:
-        data = sender_conn.recv(1024)
-        if data.endswith(b"END_OF_FILE"):
+        while True:
+            data = sender_conn.recv(1024)
+            if not data or data.endswith(b"END_OF_FILE"):
+                receiver_conn.sendall(data)
+                break
             receiver_conn.sendall(data)
-            break
-        receiver_conn.sendall(data)
 
-    sender_conn.close()
-    receiver_conn.close()
+        print("File transfer completed from sender to receiver.")
+    except Exception as e:
+        print(f"Error in handle_sender: {e}")
+    finally:
+        sender_conn.close()
+        receiver_conn.close()
 
-    with condition:
-        del connection_codes[connection_code]
+        with condition:
+            if connection_code in connection_codes:
+                del connection_codes[connection_code]
 
 def handle_receiver(receiver_conn):
-    receiver_conn.sendall(b"READY")
-    connection_code = receiver_conn.recv(1024).decode()
-    print(f"Connection code: {connection_code}")
-    print(connection_codes.keys())
+    try:
+        connection_code = receiver_conn.recv(1024).decode()
+        print(f"Receiver connected with connection code: {connection_code}")
 
-    with condition:
-        if connection_code in connection_codes:
-            connection_codes[connection_code] = receiver_conn
-            condition.notify_all()  # Notify waiting sender
-            receiver_conn.sendall(b"READY")
-        else:
-            receiver_conn.sendall(b"INVALID_CODE")
-            receiver_conn.close()
+        with condition:
+            if connection_code in connection_codes:
+                connection_codes[connection_code] = receiver_conn
+                condition.notify_all()
+                receiver_conn.sendall(b"CONNECTION_ESTABLISHED")
+            else:
+                receiver_conn.sendall(b"INVALID_CODE")
+                receiver_conn.close()
+                return
+
+        while True:
+            data = receiver_conn.recv(1024)
+            if not data:
+                break
+            # Receivers do not send data back to sender in this setup.
+    except Exception as e:
+        print(f"Error in handle_receiver: {e}")
+    finally:
+        receiver_conn.close()
 
 def start_server():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
