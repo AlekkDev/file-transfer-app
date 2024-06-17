@@ -44,16 +44,17 @@ class FileTransferApp:
         except ConnectionRefusedError:
             return False
 
-    def get_connection_code(self):
+    def display_connection_code(self, code, send_window):
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((socket.gethostname(), 8000))
-            sock.sendall(b"SENDER")
-            connection_code = sock.recv(1024).decode()
-            print(f"Connection code: {connection_code}")
-            return connection_code
-        finally:
-            sock.close()
+            code_entry = tk.Entry(send_window, font=("Arial", 12), bg="#f4fdfe", justify='center')
+            code_entry.place(x=20, y=150, width=200)
+            code_entry.insert(0, code)
+            code_entry.config(state='readonly')
+
+            copy_button = tk.Button(send_window, text="Copy", command=lambda: self.copy_code(send_window, code_entry.get()))
+            copy_button.place(x=230, y=150)
+        except Exception as e:
+            print(f"Error: {e}")
 
     def open_send_window(self):
         if not self.check_server_status():
@@ -67,16 +68,6 @@ class FileTransferApp:
         send_window.resizable(False, False)
         send_window.wm_attributes("-topmost", 1)
 
-        code = self.get_connection_code()
-
-        code_entry = tk.Entry(send_window, font=("Arial", 12), bg="#f4fdfe", justify='center')
-        code_entry.place(x=20, y=150, width=200)
-        code_entry.insert(0, code)
-        code_entry.config(state='readonly')
-
-        copy_button = tk.Button(send_window, text="Copy", command=lambda: self.copy_code(send_window, code_entry.get()))
-        copy_button.place(x=230, y=150)
-
         tk.Label(send_window, text="Select the file to send:", font=("Arial", 12), bg="#f4fdfe").place(x=20, y=30)
         file_path_entry = tk.Entry(send_window, width=30)
         file_path_entry.place(x=20, y=60)
@@ -84,22 +75,32 @@ class FileTransferApp:
         browse_button = tk.Button(send_window, text="Browse", command=lambda: self.browse_file(file_path_entry))
         browse_button.place(x=260, y=55)
 
-        send_button = tk.Button(send_window, text="Send", command=lambda: self.send_file(file_path_entry.get()))
+        send_button = tk.Button(send_window, text="Send", command=lambda: threading.Thread(target=self.send_file, args=(file_path_entry.get(), send_window)).start())
         send_button.place(x=320, y=55)
 
-    def send_file(self, file_path):
+    def send_file(self, file_path, send_window):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((socket.gethostname(), 8000))
+        sock.sendall(b"SENDER")
+        response = sock.recv(1024).decode()
+        if response != "READY":
+            print(response)
+            return
+        sock.sendall(b"READY")
+        connection_code = sock.recv(1024).decode()
+
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((socket.gethostname(), 8000))
-            print("Waiting for receiver to be ready...")
-            sock.sendall(b"SENDER")
+            self.display_connection_code(connection_code, send_window)
 
             await_ready = sock.recv(1024).decode()
             if await_ready == "READY":
-                print("Receiver is ready to receive the file")
-                await_start = sock.recv(1024).decode()
-                if await_start == "START_TRANSFER":
-                    self.send_file_data(sock, file_path)
+                print("Waiting for receiver to be ready...")
+
+            start_transfer = sock.recv(1024).decode()
+            if start_transfer == "START_TRANSFER":
+                self.send_file_data(sock, file_path)
+                sock.sendall(b"END_OF_FILE")
+                print(f"File sent: {os.path.getsize(file_path)} bytes")
         except Exception as e:
             print(f"Error: {e}")
         finally:
@@ -110,8 +111,6 @@ class FileTransferApp:
             with open(file_path, 'rb') as file:
                 while data := file.read(1024):
                     sock.sendall(data)
-            sock.sendall(b"END_OF_FILE")
-            print(f"File sent: {os.path.getsize(file_path)} bytes")
         except Exception as e:
             print(f"Error: {e}")
 
@@ -139,7 +138,7 @@ class FileTransferApp:
         code_entry = tk.Entry(receive_window, width=30)
         code_entry.place(x=20, y=60)
 
-        receive_button = tk.Button(receive_window, text="Connect", command=lambda: self.receiver_connect(code_entry.get()))
+        receive_button = tk.Button(receive_window, text="Connect", command=lambda: threading.Thread(target=self.receiver_connect(code_entry.get())).start())
         receive_button.place(x=320, y=55)
 
     def receiver_connect(self, code):
@@ -153,28 +152,22 @@ class FileTransferApp:
                 print(await_ready)
                 return
             print("Connection established")
-
-            receiver_thread = threading.Thread(target=self.receiver_thread)
-            receiver_thread.start()
-
-        except Exception as e:
-            print(f"Error: {e}")
-
-    def receiver_thread(self):
-        try:
-            with open('image_received.jpg', 'wb') as file:
-                while True:
-                    file_data = self.server_socket.recv(1024)
-                    if file_data.endswith(b'END_OF_FILE'):
-                        file.write(file_data[:-len(b'END_OF_FILE')])
-                        break
-                    file.write(file_data)
-
-            print(f"File 'image_received.jpg' received")
+            start = self.server_socket.recv(1024)
+            if start == b"TRANSFER_STARTED":
+                with open('file_received.jpg', 'wb') as file:
+                    while True:
+                        file_data = self.server_socket.recv(1024)
+                        if file_data.endswith(b'END_OF_FILE'):
+                            file.write(file_data[:-len(b'END_OF_FILE')])
+                            break
+                        file.write(file_data)
+                print("File received")
         except Exception as e:
             print(f"Error: {e}")
         finally:
             self.server_socket.close()
+
+
 
 if __name__ == "__main__":
     root = tk.Tk()

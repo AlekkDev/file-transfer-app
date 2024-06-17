@@ -7,6 +7,9 @@ condition = threading.Condition()
 
 def handle_sender(sender_conn):
     try:
+        sender_conn.sendall(b"READY")
+        if sender_conn.recv(1024).decode() != "READY":
+            return
         connection_code = str(uuid.uuid4())
         print(f"Connection code: {connection_code}")
         sender_conn.sendall(connection_code.encode())
