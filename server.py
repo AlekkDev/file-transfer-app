@@ -2,6 +2,8 @@ import socket
 import uuid
 import threading
 import time
+import sqlite3
+from datetime import datetime
 
 connection_codes = {}
 condition = threading.Condition()
@@ -34,6 +36,7 @@ def handle_sender(sender_conn):
         file_name = sender_conn.recv(1024).decode()
         receiver_conn.sendall(file_name.encode())
 
+
         print("Starting file transfer...")
         sender_conn.sendall(b"START_TRANSFER")
         while True:
@@ -43,7 +46,17 @@ def handle_sender(sender_conn):
                 break
             receiver_conn.sendall(data)
         print("File transfer completed from sender to receiver.")
-        time.sleep(0.5)  # Add a small delay
+
+        #### SQL DATABASE ####
+        # Get the sender IP
+        sender_ip = sender_conn.getpeername()[0]
+        # Get the receiver IP
+        receiver_ip = receiver_conn.getpeername()[0]
+        # Store the transfer in the database
+        log_transfer(sender_ip, receiver_ip, file_name)
+        # Small delay to allow the receiver to finish writing the file, otherwise some errors occur
+        time.sleep(0.5)
+        view_transfer_logs()
 
 
     finally:
@@ -79,11 +92,13 @@ def handle_receiver(receiver_conn):
         print(f"Receiving file: {file_name}")
 
 
+
     finally:
         receiver_conn.close()
 
 # STARTS SERVER AND LISTENS FOR CONNECTIONS
 def start_server():
+    initialize_database()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind((socket.gethostname(), 8000))
     sock.listen(5)
@@ -102,6 +117,40 @@ def start_server():
             threading.Thread(target=handle_receiver, args=(conn,)).start()
         else:
             conn.close()
+
+def initialize_database():
+    conn = sqlite3.connect('file_transfers.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS transfers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_ip TEXT,
+        receiver_ip TEXT,
+        transfer_datetime TEXT,
+        filename TEXT
+    )
+    ''')
+    conn.commit()
+    conn.close()
+def log_transfer(sender_ip, receiver_ip, filename):
+    conn = sqlite3.connect('file_transfers.db')
+    cursor = conn.cursor()
+    transfer_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute('''
+    INSERT INTO transfers (sender_ip, receiver_ip, transfer_datetime, filename)
+    VALUES (?, ?, ?, ?)
+    ''', (sender_ip, receiver_ip, transfer_datetime, filename))
+    conn.commit()
+    conn.close()
+
+def view_transfer_logs():
+    conn = sqlite3.connect('file_transfers.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM transfers')
+    logs = cursor.fetchall()
+    for log in logs:
+        print(f"ID: {log[0]}, Sender: {log[1]}, Receiver: {log[2]}, DateTime: {log[3]}, Filename: {log[4]}")
+    conn.close()
 
 if __name__ == "__main__":
     start_server()
