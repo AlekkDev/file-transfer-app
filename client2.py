@@ -138,7 +138,7 @@ class FileTransferApp:
         code_entry = tk.Entry(receive_window, width=30)
         code_entry.place(x=20, y=60)
 
-        receive_button = tk.Button(receive_window, text="Connect", command=lambda: self.receiver_connect(code_entry.get()))
+        receive_button = tk.Button(receive_window, text="Connect", command=lambda: threading.Thread(target=self.receiver_connect(code_entry.get())).start())
         receive_button.place(x=320, y=55)
 
     def receiver_connect(self, code):
@@ -146,32 +146,30 @@ class FileTransferApp:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.connect((socket.gethostname(), 8000))
             self.server_socket.sendall(b"RECEIVER")
-            self.server_socket.sendall(code.encode())
-            await_ready = self.server_socket.recv(1024).decode()
-            if await_ready != "CONNECTION_ESTABLISHED":
-                print(await_ready)
-                return
-            print("Connection established")
-
-            receiver_thread = threading.Thread(target=self.receiver_thread)
-            receiver_thread.start()
-        except Exception as e:
-            print(f"Error: {e}")
-
-    def receiver_thread(self):
-        try:
-            with open('image_received.jpg', 'wb') as file:
+            if self.server_socket.recv(1024) == b"READY":
+                print("Please send the connection code...")
+                self.server_socket.sendall(code.encode())
+                await_ready = self.server_socket.recv(1024).decode()
+                if await_ready != "CONNECTION_ESTABLISHED":
+                    print(await_ready)
+                    self.server_socket.close()
+                    return
+                print("Connection established")
                 while True:
                     file_data = self.server_socket.recv(1024)
-                    if file_data.endswith(b'END_OF_FILE'):
-                        file.write(file_data[:-len(b'END_OF_FILE')])
+                    if not file_data:
                         break
-                    file.write(file_data)
-            print(f"File 'image_received.jpg' received")
+                    if file_data.endswith(b'END_OF_FILE'):
+                        # Handle end of file
+                        break
+                    # Process file data
+                print("File received")
         except Exception as e:
             print(f"Error: {e}")
         finally:
-            self.server_socket.close()
+            if self.server_socket:
+                self.server_socket.close()
+
 
 if __name__ == "__main__":
     root = tk.Tk()
