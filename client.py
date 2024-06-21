@@ -190,8 +190,7 @@ class FileTransferApp:
         except Exception as e:
             print(f"Error: {e}")
         finally:
-            if self.server_socket:
-                self.server_socket.close()
+            self.server_socket.close()
 
 if __name__ == "__main__":
     root = tk.Tk()

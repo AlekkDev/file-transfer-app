@@ -1,6 +1,7 @@
 import socket
 import uuid
 import threading
+import time
 
 connection_codes = {}
 condition = threading.Condition()
@@ -41,8 +42,9 @@ def handle_sender(sender_conn):
                 receiver_conn.sendall(data)
                 break
             receiver_conn.sendall(data)
-
         print("File transfer completed from sender to receiver.")
+        time.sleep(0.5)  # Add a small delay
+
 
     finally:
         sender_conn.close()
@@ -56,15 +58,12 @@ def handle_receiver(receiver_conn):
     try:
         receiver_conn.sendall(b"READY")
         connection_code = receiver_conn.recv(1024).decode()
-
         print(f"Receiver connected with connection code: {connection_code}")
         print("Available connection codes: ", connection_codes)
-        #
-        # THREADING CONDITION + CHECK IF CODE VALID AND NOTIFY ALL THREADS
+
         with condition:
             if connection_code in connection_codes:
                 connection_codes[connection_code] = receiver_conn
-
                 print(f"Receiver connection = {receiver_conn} ", connection_codes[connection_code])
                 condition.notify_all()
                 receiver_conn.sendall(b"CONNECTION_ESTABLISHED")
@@ -75,23 +74,10 @@ def handle_receiver(receiver_conn):
                 print(f"Invalid connection code: {connection_code}")
                 return
 
-        # Receive the file name
+        # Receive the file name from the sender (via handle_sender)
         file_name = receiver_conn.recv(1024).decode()
         print(f"Receiving file: {file_name}")
 
-        # Receive the file data
-        with open(file_name, 'wb') as file:
-            while True:
-                data = receiver_conn.recv(1024)
-                if not data:
-                    break
-                # Check if the file transfer is complete
-                if data.endswith(b'END_OF_FILE'):
-                    file.write(data[:-11])
-                    break
-                file.write(data)
-
-        print("File received")
 
     finally:
         receiver_conn.close()
