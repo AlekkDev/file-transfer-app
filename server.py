@@ -20,7 +20,7 @@ def handle_sender(sender_conn):
         connection_code = str(uuid.uuid4())
         print(f"Generated connection code: {connection_code}")
         sender_conn.sendall(connection_code.encode())
-
+                                                                            # BOŽE POMOZI
         with condition:
             connection_codes[connection_code] = None
             sender_conn.sendall(b"READY")
@@ -58,7 +58,6 @@ def handle_sender(sender_conn):
         time.sleep(0.5)
         view_transfer_logs()
 
-
     finally:
         sender_conn.close()
         if receiver_conn:
@@ -73,7 +72,7 @@ def handle_receiver(receiver_conn):
         connection_code = receiver_conn.recv(1024).decode()
         print(f"Receiver connected with connection code: {connection_code}")
         print("Available connection codes: ", connection_codes)
-
+                                            # NE DIRAJ, RADI - POPRAVI CLIENT
         with condition:
             if connection_code in connection_codes:
                 connection_codes[connection_code] = receiver_conn

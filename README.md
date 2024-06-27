@@ -3,6 +3,7 @@
 ## File Transfer App
 
 ![image info](./images/Client-Server.png)
+
 This application allows users to send and receive files over a local network using a client-server architecture.
 
 ### Components
@@ -48,3 +49,4 @@ This application allows users to send and receive files over a local network usi
 - **Unique Connection Codes:** Ensures secure and targeted file transfers
 - **Threaded Connections:** Allows multiple simultaneous transfers
 - **GUI Interface:** User-friendly design for easy file selection and transfer
+- **Database:** The server stores a database of senders, receivers, file size, time of transfer etc. 

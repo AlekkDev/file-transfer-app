@@ -182,6 +182,7 @@ class FileTransferApp:
                         if not file_data:
                             break
                         if file_data.endswith(b'END_OF_FILE'):
+                            #write file except "END_OF_FILE"
                             file.write(file_data[:-11])
                             break
                         file.write(file_data)
